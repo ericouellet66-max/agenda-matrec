@@ -149,8 +149,8 @@ if(new Date(selected+'T12:00:00').getDay()===0)selected=iso(monday);render();
 const tabNames=['calendrier','pm','disponibilites','registre','reparations'];
 function showTab(name,focus=false){if(!tabNames.includes(name))name='calendrier';for(const n of tabNames){const active=n===name;document.getElementById('panel-'+n).hidden=!active;const b=document.getElementById('tab-'+n);b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1;if(active&&focus)b.focus()}location.hash=name;if(name==='disponibilites')renderCapacity($('capacityDate').value||selected);if(name==='reparations'&&typeof repairsRender==='function')repairsRender()}
 for(const name of tabNames){const b=$('tab-'+name);b.onclick=()=>showTab(name);b.onkeydown=e=>{let i=tabNames.indexOf(name);if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();showTab(tabNames[(i+(e.key==='ArrowRight'?1:tabNames.length-1))%tabNames.length],true)}}}
-window.addEventListener('hashchange',()=>showTab(location.hash.slice(1)));
-showTab(location.hash.slice(1));
+window.addEventListener('hashchange',()=>{if(!location.hash.startsWith('#rdl-import='))showTab(location.hash.slice(1))});
+if(!location.hash.startsWith('#rdl-import='))showTab(location.hash.slice(1));
 function pmScopeLabel(scope){return ({'705':'PM 705 Matrec','706':'PM 706','SSAD':'PM SSAD','791':'Ancien rapport 791 — à reclasser'})[scope]||scope}
 const pmKey='matrec-pm-history-v1';
 let pmReports=[],pmMarks={},pmStaged=[];
@@ -312,4 +312,23 @@ const rdlCopyTable=$('repairCopyTable').onclick;$('repairCopyTable').onclick=asy
 const rdlCsv=$('repairCsv').onclick;$('repairCsv').onclick=()=>{if($('repairView').value!=='rdl'){rdlCsv();return}if(rdlData)csvDownload([rdlData.headers,...rdlData.rows.map(r=>r.cells.map((_,i)=>rdlValue(r,i)))],'RDL-'+iso(new Date())+'.csv')};
 $('repairView').value='rdl';repairsRender();
 
+</script><script>
+async function rdlLoadPrivateLaunch(){
+ if(!location.hash.startsWith('#rdl-import='))return;
+ const encoded=location.hash.slice('#rdl-import='.length);
+ history.replaceState(null,'',location.pathname+location.search+'#reparations');
+ try{
+  if(encoded.length>300000)throw Error('Le fichier RDL est trop volumineux.');
+  const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(encoded)))).map(x=>x.toString(16).padStart(2,'0')).join('');
+  if(rdlData&&localStorage.getItem('matrec-rdl-launch-v1')===fingerprint){$('repairView').value='rdl';showTab('reparations');$('repairStatus').textContent='RDL est déjà chargé sur cet appareil. Tes modifications sont conservées.';return}
+  if(typeof DecompressionStream==='undefined')throw Error('Ouvre ce lien dans une version récente de Chrome ou Samsung Internet.');
+  const raw=atob(encoded.replaceAll('-','+').replaceAll('_','/')),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
+  const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const text=await new Response(stream).text();if(text.length>2000000)throw Error('Contenu RDL trop volumineux.');
+  const data=JSON.parse(text);if(!rdlValid(data))throw Error('Contenu RDL non reconnu.');
+  rdlImportData(data);localStorage.setItem('matrec-rdl-launch-v1',fingerprint);
+  $('repairView').value='rdl';showTab('reparations');$('repairStatus').textContent='RDL chargé automatiquement. Les lignes, commentaires et couleurs sont prêts; tes autres données sont conservées.';
+ }catch(e){showTab('reparations');$('repairStatus').textContent='Chargement RDL : '+e.message}
+}
+rdlLoadPrivateLaunch();
 </script></body></html>
